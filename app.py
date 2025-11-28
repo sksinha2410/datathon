@@ -26,7 +26,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 PDF_DPI = int(os.getenv("PDF_DPI", "100"))
 # Allowed domains for document URLs (comma-separated, empty means allow all public URLs)
 ALLOWED_DOMAINS = os.getenv("ALLOWED_DOMAINS", "").split(",") if os.getenv("ALLOWED_DOMAINS") else []
