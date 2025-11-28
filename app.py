@@ -2,9 +2,12 @@ import os
 import io
 import base64
 import json
+import logging
 import re
-import tempfile
+import socket
+import ipaddress
 import requests
+from urllib.parse import urlparse
 from PIL import Image
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -14,8 +17,18 @@ from pdf2image import convert_from_bytes
 
 load_dotenv()
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = Flask(__name__)
 CORS(app)
+
+# Configuration
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+PDF_DPI = int(os.getenv("PDF_DPI", "100"))
+# Allowed domains for document URLs (comma-separated, empty means allow all public URLs)
+ALLOWED_DOMAINS = os.getenv("ALLOWED_DOMAINS", "").split(",") if os.getenv("ALLOWED_DOMAINS") else []
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -41,20 +54,84 @@ class TokenTracker:
         }
 
 
+def is_private_ip(hostname):
+    """Check if hostname resolves to a private IP address."""
+    try:
+        # Resolve hostname to IP address
+        ip = socket.gethostbyname(hostname)
+        ip_obj = ipaddress.ip_address(ip)
+        # Check if IP is private, loopback, or link-local
+        return (
+            ip_obj.is_private or
+            ip_obj.is_loopback or
+            ip_obj.is_link_local or
+            ip_obj.is_reserved or
+            ip_obj.is_multicast
+        )
+    except (socket.gaierror, ValueError):
+        # If we can't resolve, reject for safety
+        return True
+
+
+def validate_url(url):
+    """Validate URL scheme and hostname to prevent SSRF attacks."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https'):
+            raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only http and https are allowed.")
+        if not parsed.netloc:
+            raise ValueError("Invalid URL: missing hostname")
+        
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("Invalid URL: missing hostname")
+        
+        # Check against allowed domains if configured
+        if ALLOWED_DOMAINS and hostname not in ALLOWED_DOMAINS:
+            # Check if it's a subdomain of an allowed domain
+            is_allowed = any(
+                hostname == domain or hostname.endswith('.' + domain)
+                for domain in ALLOWED_DOMAINS
+            )
+            if not is_allowed:
+                raise ValueError(f"Domain '{hostname}' is not in the allowed list")
+        
+        # Block private/internal IP addresses to prevent SSRF
+        if is_private_ip(hostname):
+            raise ValueError("Access to private/internal IP addresses is not allowed")
+        
+        return True
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Invalid URL: {str(e)}")
+
+
 def download_document(url):
     """Download document from URL and return content and type."""
     try:
+        # Validate URL to prevent SSRF
+        validate_url(url)
+        
         response = requests.get(url, timeout=60)
         response.raise_for_status()
         content = response.content
         content_type = response.headers.get('Content-Type', '')
         
         # Determine file type from content or URL
-        if 'pdf' in content_type.lower() or url.lower().endswith('.pdf') or content[:4] == b'%PDF':
+        # Check content length before accessing bytes
+        is_pdf = (
+            'pdf' in content_type.lower() or
+            url.lower().endswith('.pdf') or
+            (len(content) >= 4 and content[:4] == b'%PDF')
+        )
+        if is_pdf:
             return content, 'pdf'
         else:
             # Assume image
             return content, 'image'
+    except ValueError:
+        raise
     except Exception as e:
         raise Exception(f"Failed to download document: {str(e)}")
 
@@ -62,7 +139,7 @@ def download_document(url):
 def convert_pdf_to_images(pdf_bytes):
     """Convert PDF bytes to list of PIL images."""
     try:
-        images = convert_from_bytes(pdf_bytes, dpi=150)
+        images = convert_from_bytes(pdf_bytes, dpi=PDF_DPI)
         return images
     except Exception as e:
         raise Exception(f"Failed to convert PDF to images: {str(e)}")
@@ -119,7 +196,7 @@ If no line items are found on this page, return:
 
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model=OPENAI_MODEL,
             messages=[
                 {
                     "role": "user",
@@ -178,6 +255,9 @@ If no line items are found on this page, return:
         }
         
     except json.JSONDecodeError as e:
+        # Log the error and raw response for debugging
+        logger.warning(f"Failed to parse JSON response for page {page_no}: {str(e)}")
+        logger.debug(f"Raw response content: {content if 'content' in dir() else 'unavailable'}")
         # Return empty result if parsing fails
         return {
             "page_no": str(page_no),

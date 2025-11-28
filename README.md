@@ -152,6 +152,9 @@ Health check endpoint.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `OPENAI_API_KEY` | Your OpenAI API key | Required |
+| `OPENAI_MODEL` | OpenAI model to use | gpt-4o |
+| `PDF_DPI` | DPI for PDF conversion | 100 |
+| `ALLOWED_DOMAINS` | Comma-separated list of allowed domains | (all public URLs) |
 | `PORT` | Server port | 5000 |
 | `DEBUG` | Enable debug mode | False |
 
