@@ -10,6 +10,53 @@ A Flask-based API that extracts line item details from bills/invoices (PDF or im
 - Supports various document formats (PDF, PNG, JPG, etc.)
 - Returns structured JSON response with pagewise line items
 
+## Technical Stack
+
+### Cloud Service Providers
+This application can be deployed on multiple cloud platforms:
+- **Heroku**: Direct deployment using the included `Procfile`
+- **AWS (Amazon Web Services)**: Containerized deployment via ECS, EKS, or App Runner
+- **GCP (Google Cloud Platform)**: Deploy to Cloud Run, GKE, or App Engine
+- **Azure**: Deploy to Azure Container Instances, AKS, or App Service
+- **Docker**: Can be deployed to any platform supporting Docker containers
+
+### Database
+**None** - This is a stateless API service. No database is required as the application:
+- Processes documents on-demand
+- Does not store any user data or processing results
+- Returns responses directly without persistence
+
+### LLM (Large Language Model)
+**Gemini 2.5-flash** - Google's Gemini Vision model for document understanding:
+- Primary model: `gemini-2.5-flash` (configurable via environment variable)
+- Used for OCR and intelligent extraction of line items from bills/invoices
+- Provides structured JSON output with high accuracy
+- Token usage is tracked and reported for cost monitoring
+- Low temperature (0.1) configuration for consistent, deterministic results
+
+### Backend
+**Flask (Python 3.12+)** - Lightweight web framework:
+- RESTful API with JSON endpoints
+- Production-ready with Gunicorn WSGI server
+- CORS enabled for cross-origin requests
+- Environment-based configuration
+- Comprehensive error handling and logging
+- Security features: SSRF protection, URL validation
+
+**Key Dependencies:**
+- `flask` - Web framework
+- `google-generativeai` - Gemini API client
+- `pdf2image` - PDF processing
+- `Pillow` - Image manipulation
+- `gunicorn` - Production WSGI server
+
+### Frontend
+**None** - This is a backend API service only. Frontend applications can consume this API:
+- Accepts HTTP POST requests with JSON payloads
+- Returns structured JSON responses
+- CORS enabled for web browser access
+- Can be integrated with any frontend framework (React, Vue, Angular, etc.)
+
 ## Prerequisites
 
 - Python 3.12+
